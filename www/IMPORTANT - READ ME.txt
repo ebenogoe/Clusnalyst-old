@@ -1,0 +1,6 @@
+This www folder is a special folder. Its naming is not arbitrary. In this folder you can put images, animations, fonts, videos, etc that you would like to use on your site. A good example of such a resource is your site's logo (if any). In your code, you specify its name eg mylogo.jpg and where you want it to be displayed. 
+
+It's very straightforward, really. More on that later.
+
+Currently I have placed a css file that changes the font of the site, together with the font file I want to use. Feel free to examine how I reference the css file in the app.R file that contains the source code
+

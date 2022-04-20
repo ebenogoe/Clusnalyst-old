@@ -1,0 +1,601 @@
+library(shiny)
+library(shinyjs)
+library(tools)
+library(cluster)
+library(ade4)
+library(msa)
+library(Biostrings)
+library(ape)
+library(seqinr)
+library(shinydashboard)
+library(shinydashboardPlus)
+
+ui <- dashboardPage(skin = "red",
+  
+  # CONTENTS OF THE HEADER ARE DEFINED HERE
+  dashboardHeader(title = "CLUSNALYST"),
+  
+  # CONTENTS OF THE SIDEBAR ARE DEFINED HERE
+  dashboardSidebar(
+    
+    sidebarMenu( id = "links_to_pages",
+      # Define the buttons that lead to the various pages as menu items here
+      menuItem("Welcome page", tabName = "welcome_page", icon = icon("handshake-o", verify_fa = FALSE)),
+      menuItem("Prior analysis", tabName = "prior_analysis_page", icon = icon("gears", verify_fa = FALSE)),
+      menuItem("Dendrogram generation", tabName = "dend_gen_page", icon = icon("gears", verify_fa = FALSE)),
+      menuItem("Cluster validation", tabName = "clust_valid_page", icon = icon("gears", verify_fa = FALSE))
+    )
+    
+  ),
+  
+  dashboardBody(
+    useShinyjs(),
+    tags$head(tags$link(rel = "stylesheet", type = "text/css", href = "styler.css")),
+    
+    tabItems(
+      tabItem(
+        tabName = "welcome_page",
+        includeHTML("www/Welcome.html"),
+      ), # End of the first tab item: the welcome page
+      
+      
+      tabItem(
+        tabName = "prior_analysis_page",
+        sidebarPanel(
+          tags$label(tags$h3("Input parameters")),
+          tags$br(),
+          
+          radioButtons(inputId = "data_type", label = "Type of data", selected = "value_binary",
+                       choices = list("Value or Binary" = "value_binary", 
+                                      "Letter-based" =  "letter_based",
+                                      "Sequence data" = "sequence_data")),
+          
+          fileInput(inputId = "uploadCSV_binary", label = "Upload CSV file", accept = ".csv", multiple = FALSE),
+          
+          
+          selectInput(inputId = "dist_mat_method", label = "Distance measure", selected = 5, 
+                      choices = list("Jaccard" = 1, "Simple matching" = 2, "Dice" = 5)),
+          
+          numericInput(inputId = "decimal_places", label = "Round to decimal places", value = 2,
+                       min = 1, max = 5),
+          actionButton(inputId = "run_analysis", label = "Submit"),
+          
+          
+          fileInput(inputId = "msafile_upload", label = "Upload FASTA file (Multiple Sequence Analysis)", 
+                    accept = ".fasta"),
+          
+          radioButtons(inputId = "aligned_state", label = "Aligned", selected = 1, inline = TRUE,
+                       choices = list("True" = 1, "False" = 0)),
+          
+          selectInput(inputId = "msa_algo", label = "Multiple sequence algorithm", selected = "ClustalW",
+                      choices = c("ClustalW", "ClustalOmega", "Muscle")),
+          
+          selectInput(inputId = "matrix_algo", label = "Distance matrix measure", selected = "identity",
+                      choices = list("Identity" = "identity", "Similarity" = "similarity")),
+          
+          numericInput(inputId = "msa_decimal_places", label = "Round to decimal places", value = 2,
+                       min = 1, max = 5),
+          
+          actionButton(inputId = "submit_msa", label = "Submit")
+        ),
+        
+        mainPanel(
+          tags$label(tags$h3("Output")),
+
+          shinyjs::hidden(tags$h4(id = "dataset_heading", "Imported dataset", style = "text-align:center;")),
+          
+          column(width = 12, tableOutput(outputId = "imported_dataset"), 
+                 style = "height:400px; overflow-y:scroll; overflow-x:scroll; margin-bottom:40px;"),
+          
+          tags$br(),
+          shinyjs::hidden(tags$h4(id = "matrix_heading", "Distance matrix", style = "text-align:center;")),
+          
+          column(width = 12, tableOutput(outputId = "distance_matrix_table"), 
+                 style = "height:400px; overflow-y:scroll; overflow-x:scroll; margin-bottom:20px;"),
+        )
+      ), # End of the second tab item: the second page
+    
+      
+    tabItem(
+      tabName = "dend_gen_page",
+      sidebarPanel(
+        tags$label(tags$h3("Input parameters")),
+        selectInput(inputId = "clust_method", label = "Clustering method", selected = "average", 
+                    choices = list("Single" = "ward.D", "Complete" = "ward.D2",
+                                   "Neighbor joining (NJ)" = "njoin",
+                                   "Average (UPGMA)" = "average",
+                                   "Centroid (UPGMC)" = "centroid",
+                                   "McQuitty (WPGMA)" = "mcquitty", 
+                                   "Median (WPGMC)" = "median")),
+        
+        selectInput(inputId = "phylo_type", label = "Type of phylogeny", selected = "phylogram",
+                    choices = list("Phylogram" = "phylogram", "Cladogram" = "cladogram",
+                                   "Fan" = "fan", "Unrooted" = "unrooted",
+                                   "Radial" = "radial", "Tidy" = "tidy")),
+        tags$br(),
+        
+        tags$h4("Plot settings"),
+        textInput(inputId = "plot_title", label = "Title of plot", placeholder = "Ex. Dendrogram"),
+        
+        selectInput(inputId = "tree_dir", label = "Direction of tree", selected = "rightwards",
+                    choices = list("Rightwards" = "rightwards", "Leftwards" = "leftwards",
+                                   "Upwards" = "upwards", "Downwards" = "downwards")),
+        
+        selectInput(inputId = "line_type", label = "Line type", selected = 1,
+                    choices = list("Plain" = 1, "Dashed" = 2,
+                                   "Dotted" = 3, "DotDash" = 4,
+                                   "Long dash" = 5, "Twodash" = 6)),
+        
+        numericInput(inputId = "edge_width", label = "Line width", value = 2,
+                     min = 1, max = 5, step = 1),
+        
+        numericInput(inputId = "label_scale", label = "Text scaling", value = 1, 
+                     min = 0.1, max = 2.0, step = 0.1),
+        
+        actionButton(inputId = "generate_dendrogram", label = "Generate dendrogram", 
+                     icon = icon("chart", verify_fa = FALSE)),
+        
+        downloadButton(outputId = "dl_dendrogram", label = "Download plot")
+      ),
+      
+      mainPanel(
+        tags$label(tags$h3("Output")),
+        plotOutput(outputId = "dendrogram_plot", height = "700px")
+      )
+    ), # End of Dendrogram generation page
+    
+    
+      tabItem(
+        tabName = "clust_valid_page",
+        sidebarPanel(
+          tags$label(tags$h3("Input parameters")),
+          tags$h4("Silhouette method"),
+          numericInput(inputId = "min_sil_clust", label = "Minimum number of clusters", value = 2, 
+                       min = 2, max = 3, step = 1),
+          
+          numericInput(inputId = "max_sil_clust", label = "Maximum number of clusters", value = 5, 
+                       min = 2, max = 20, step = 1),
+          
+          actionButton(inputId = "sil_analysis", label = "Perform silhouette analysis"),
+          tags$br(), tags$br(), tags$br(), tags$br(),
+          
+          tags$h4("Bootstrap resampling technique"),
+          numericInput(inputId = "bs_reps", "Number of bootstrap replicates", value = 100, 
+                       min = 10, max = 1000, step = 1),
+          tags$h5("Warning. A very high number of repliates will significantly increase the time
+                  taken to complete the bootstrap analysis. Use with caution", align = "justify"),
+          
+          tags$br(),
+          
+          radioButtons(inputId = "rootedState", label = "Rooted", selected = TRUE, 
+                       choices = list("True" = TRUE, "False" = FALSE)),
+          
+          selectInput(inputId = "legend_pos", label = "Position of legend", selected = "topleft",
+                      choices = list("Top-left" = "topleft", "Top-right" = "topright",
+                                     "Bottom-left" = "bottomleft", "Bottom-right" = "bottomright")),
+          
+          disabled(actionButton(inputId = "bs_analysis", label = "Perform bootstrap analysis")),
+        ),
+        
+        mainPanel(
+          tags$label(tags$h3("Output")),
+          verbatimTextOutput(outputId = "sil_analysis_output"),
+          plotOutput(outputId = "bs_plot", height = "700px")
+        )
+      ) # End of Cluster validation page
+    ) # End of tab items
+  ) # End of the site's main body
+) # End of the entire dashboardPage
+
+
+
+server <- function(input, output) {
+  
+  #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++#
+  #                         Section 1. Global variables                                     #
+  #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++#
+  ## This is a special kind of variable which is accessible anywhere
+  global_vars <- reactiveValues(dendrogram = 0)
+  dissim_matrix <- c()
+  dataset <- c()
+  
+  
+  #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++#
+  #                       Section 2. ObserveEvent() Expressions                             #
+  #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++#
+  ## Triggered when the main "Submit" button is clicked
+  observeEvent(input$run_analysis, {
+    shinyjs::disable(id = "dl_dendrogram")
+    
+    file <- input$uploadCSV_binary
+    ext <- file_ext(file$datapath)
+    req(file)
+    validate(need(ext == "csv", "Please upload a CSV (CSV) file!"))
+    
+    tryCatch({
+      reactive_priorAnalysis <- reactive(priorAnalysis(file$datapath))
+      reactive_priorAnalysis()
+    },
+    warning = function(cond) {
+      showNotification(paste("Fatal warning! Please check your submitted data/options and 
+                              try again.", cond), type = 'warning', duration = 10)
+    },
+    error = function(cond) {
+      showNotification(paste("An error occured! Please check your submitted data/options and 
+                              try again.", cond, sep = "\n"), type = 'err', duration = 10)
+    })
+  })
+  
+  
+  ## Triggered when the Submit button of the MSAnalysis is clicked
+  observeEvent(input$submit_msa, {
+    shinyjs::disable(id = "dl_dendrogram")
+    
+    file <- input$msafile_upload
+    ext <- file_ext(file$datapath)
+    req(file)
+    validate(need(ext == "fasta", "Please upload a FASTA file!"))
+    
+    tryCatch({
+    reactive_msaAnalysis <- reactive(msaAnalysis(file$datapath))
+    reactive_msaAnalysis()
+    },
+    warning = function(cond) {
+      showNotification(paste("Fatal warning! Please check your submitted data/options and 
+                              try again.", cond), type = 'warning', duration = 10)
+    },
+    error = function(cond) {
+      showNotification(paste("An error occured! Please check your submitted data/options and 
+                              try again.", cond, sep = "\n"), type = 'err', duration = 10)
+    })
+  })
+  
+  
+  ## Triggered when the Generate dendrogram button is clicked
+  observeEvent(input$generate_dendrogram, {
+    reactive_dendrogen <- reactive(dendrogen())
+    reactive_dendrogen()
+  })
+  
+  
+  ## Triggered to perform Silhouette analysis
+  observeEvent(input$sil_analysis, {
+    reactive_silhouetteFunc <- reactive(silhouetteFunc)
+    
+    output$sil_analysis_output <- renderPrint({
+      silhouetteFunc()
+      #reactive_silhouetteFunc()
+    })
+  })
+  
+  
+  ## Triggered when the Bootstrap analysis button is pressed
+  observeEvent(input$bs_analysis, {
+    tryCatch({
+      bootstrapFunction()
+    },
+    warning = function(cond) {
+      showNotification(paste("Fatal warning! Please check your submitted data/options and 
+                              try again.", cond), type = 'warning', duration = 10)
+    },
+    error = function(cond) {
+      showNotification(paste("An error occured! Please check your submitted data/options and 
+                              try again.", cond), type = 'err', duration = 10)
+    })
+  })
+  
+  
+  #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++#
+  #                 Section 3. Observe() Expressions and Downloaders                        #
+  #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++#
+  ## Show/Hide input objects based on the user's chosen data type
+  observe({
+    if (input$data_type == "value_binary" || input$data_type == "letter_based") {
+      shinyjs::show(id = "uploadCSV_binary")
+      shinyjs::show(id = "dist_mat_method")
+      shinyjs::show(id = "decimal_places")
+      shinyjs::show(id = "run_analysis")
+      
+      shinyjs::hide(id = "msafile_upload")
+      shinyjs::hide(id = "aligned_state")
+      shinyjs::hide(id = "msa_algo")
+      shinyjs::hide(id = "matrix_algo")
+      shinyjs::hide(id = "msa_decimal_places")
+      shinyjs::hide(id = "submit_msa")
+    }
+    
+    else if (input$data_type == "sequence_data") {
+      shinyjs::show(id = "msafile_upload")
+      shinyjs::show(id = "aligned_state")
+      shinyjs::show(id = "msa_algo")
+      shinyjs::show(id = "matrix_algo")
+      shinyjs::show(id = "msa_decimal_places")
+      shinyjs::show(id = "submit_msa")
+      
+      shinyjs::hide(id = "uploadCSV_binary")
+      shinyjs::hide(id = "dist_mat_method")
+      shinyjs::hide(id = "decimal_places")
+      shinyjs::hide(id = "run_analysis")
+    }
+  })
+  
+  ## Monitor if the user has chosen that his/her sequence is already aligned
+  observe({
+    if (input$aligned_state == 1) {
+      shinyjs::hide(id = "msa_algo")
+    }
+    else 
+      shinyjs::show(id = "msa_algo")
+  })
+  
+  ## Code to download the generated dendrogram
+  output$dl_dendrogram <- downloadHandler(
+    filename = function() {
+      paste("Dendrogram.png")
+    },
+    content = function (file) {
+      png(file, width = 900, height = 600)
+      plotDendrogram()
+      dev.off()
+    }
+  )
+  
+  
+  #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++#
+  #                   Section 4. Regular functions (the "workhorses")                       #
+  #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++#
+  
+  ## The core backbone function
+  priorAnalysis <- function(x) {
+    # Import dataset of binary values
+    otu_data <<- read.csv(file = x, fileEncoding = "UTF-8-BOM")
+    
+    # Get the names of the OTUs. This is stored in the first column of the imported csv file
+    otu_names <- otu_data[, 1]
+    
+    # Remove the first column of the csv file to get only the necessary OTU data
+    dataset <<- otu_data[, -1]
+    
+    # By default, the rows are named using numbers, which is not very informative.
+    # we define the row names using the names we extracted from the first column
+    rownames(dataset) <<- otu_names
+    
+    # View the imported dataset
+    output$imported_dataset <- renderTable({
+      shinyjs::show(id = "dataset_heading")
+      dataset
+      }, rownames = TRUE, bordered = TRUE, width = "100%", spacing = "m", )
+    
+    
+    if (input$data_type == "value_binary") {
+      
+      # Create a dissimilarity matrix, round each value to specified number of decimal places
+      dissim_matrix <<- dist.binary(dataset, method = input$dist_mat_method)
+      dissim_matrix <<- round(dissim_matrix, input$decimal_places)
+      
+      # Output rounded dissimilarity matrix
+      output$distance_matrix_table <- renderTable({
+        shinyjs::show(id = "matrix_heading")
+        
+        as.data.frame(as.matrix(dissim_matrix)) 
+      }, rownames = TRUE, bordered = TRUE, width = "100%", spacing = "m",)
+    }
+    
+    
+    else {
+      # Transpose dataset to make snps as columns and genotypes as rows
+      dataset <- data.frame(t(dataset))
+      
+      # Use mono_rm() function to remove monomorphic markers
+      pmorphic <- mono_rm(dataset)
+      
+      # Use snp_bin() function to convert the obtained polymorphic data to binary data
+      snp_binary_data <- snp_bin(pmorphic)
+      
+      # Find the distance of the snp binary data
+      dissim_matrix <<- dist.binary(snp_binary_data, method = input$dist_mat_method) 
+      
+      # Round values to specified number of decimal places
+      dissim_matrix <<- round(dissim_matrix, input$decimal_places) 
+      
+      # Output rounded snp dissimilarity matrix
+      output$distance_matrix_table <- renderTable({
+        shinyjs::show(id = "matrix_heading")
+        as.data.frame(as.matrix(dissim_matrix))
+      }, rownames = TRUE, bordered = TRUE, width = "100%", spacing = "m",)
+    }
+    
+  }
+  
+  
+  # Function to perform multiple sequence analysis
+  msaAnalysis <- function(x) {
+    hemoSeq <- readAAStringSet(x)
+    
+    # Align sequence if not already aligned
+    if (input$aligned_state == 0)
+      hemoAln <- msa(hemoSeq, method = input$msa_algo)
+    
+    output$imported_dataset <- renderTable({
+      shinyjs::show(id = "dataset_heading")
+      as.data.frame(hemoSeq)
+    }, rownames = TRUE)
+    
+    # Convert the result for later processing with the seqinr package
+    hemoAln2 <- msaConvert(hemoAln, type="seqinr::alignment")
+    hemoAln2
+    
+    # We compute a distance matrix using the dist.alignment() function from the seqinr package:
+    dissim_matrix <<- dist.alignment(hemoAln2, input$matrix_algo)
+    dissim_matrix <<- round(dissim_matrix, input$msa_decimal_places)
+    
+    output$distance_matrix_table <- renderTable({
+      shinyjs::show(id = "matrix_heading")
+      as.data.frame(as.matrix(dissim_matrix))
+    }, rownames = TRUE)
+    
+  }
+  
+  ## The Dendrogram generation and plotting function
+  dendrogen <- function() {
+    if (input$clust_method == "njoin") {
+      if (input$data_type == "value_binary") {
+        global_vars$dendrogram <- nj(dissim_matrix)
+      }
+      else if (input$data_type == "letter_based") {
+        global_vars$dendrogram <- nj(dissim_matrix) }
+      else
+        global_vars$dendrogram <- nj(dissim_matrix)
+    }
+    
+    else {
+      if (input$data_type == "value_binary") {
+        global_vars$dendrogram <- as.phylo(hclust(dissim_matrix, method = input$clust_method))
+      }
+      else if (input$data_type == "letter_based") {
+        global_vars$dendrogram <- as.phylo(hclust(dissim_matrix, method = input$clust_method))
+      }
+      else
+        global_vars$dendrogram <- as.phylo(hclust(dissim_matrix, method = input$clust_method))
+    }
+    
+    output$dendrogram_plot <- renderPlot({
+      # Plot the dendrogram
+      plotDendrogram()
+      
+      # Re-enable the necessary buttons immediately after the plot is available
+      shinyjs::enable(id = "dl_dendrogram") 
+      shinyjs::enable(id = "bs_analysis") 
+
+    })
+    
+    updateNumericInput(inputId = "max_sil_clust", max = ncol(dissim_matrix) - 1, value = ncol(dissim_matrix) - 1)
+  }
+  
+  ##
+  silhouetteFunc <- function() {
+    min_clust <- input$min_sil_clust
+    max_clust <- input$max_sil_clust
+
+      for (i in min_clust:max_clust) {
+        silhouette_results <- silhouette(cutree(as.hclust(global_vars$dendrogram), k = i), dissim_matrix)
+        silhouette_summary <- summary(silhouette_results)
+        cat("For " , i , " clusters, average silhouette width is ", silhouette_summary$avg.width, "\n")
+      }
+      
+      cat("\n\nRange of Average Silhouette Width (ASW)\n")
+      cat("0.71 - 1.0  : A strong structure has been found\n")
+      cat("0.51 - 0.71 : A reasonable structure has been found\n")
+      cat("0.26 - 0.50 : The structure is weak and could be artificial\n")
+      cat("  < 0.25    : No substantial structure found")
+  }
+  
+  ## Function to perform bootstrapping
+  bootstrapFunction <- function() {
+    print("1")
+    bstrees <- c()
+    
+    # hclust clustering method
+    hclust_function <- function(x) as.phylo(hclust(x, method = input$clust_method))
+    
+    # nj clustering method
+    nj_function <- function(x) nj(x)
+
+    # For value-binary data
+    if (input$clust_method == "njoin") {
+      bstrees <- boot.phylo(global_vars$dendrogram, FUN = nj_function, x = as.matrix(dissim_matrix), 
+                            B = as.numeric(input$bs_reps), rooted = as.logical(input$rootedState), trees = TRUE)$trees
+      }
+    
+    else {
+      bstrees <- boot.phylo(global_vars$dendrogram, FUN = hclust_function, x = as.matrix(dissim_matrix), 
+                            B = as.numeric(input$bs_reps), rooted = as.logical(input$rootedState), trees = TRUE)$trees
+      }
+    
+    # Get proportions of each clade:
+    clad <- prop.clades(global_vars$dendrogram, bstrees, rooted = TRUE)
+    
+    # Get proportions of each bipartition:
+    boot <- prop.clades(global_vars$dendrogram, bstrees)
+    
+    output$bs_plot <- renderPlot({
+      plotDendrogram()
+      title(main = "Bipartition vs. Clade Support Values", cex.main = 1.5)
+      
+      drawSupportOnEdges(boot)
+      nodelabels(clad)
+      legend(input$legend_pos, legend = c("Bipartitions", "Clades"), pch = 22,
+             pt.bg = c("green", "lightblue"), pt.cex = 2.5)
+    })
+  }
+  
+  ## Function to plot dendrogram
+  plotDendrogram <- function() {
+    
+    # Plot margin values: Bottom, left, top, right
+    par(mar = c(2, 2, 3, 2))
+    plot.phylo(global_vars$dendrogram, type = input$phylo_type, cex = input$label_scale, 
+               node.width = input$edge_width, edge.lty = as.numeric(input$line_type),
+               direction = input$tree_dir)
+    axisPhylo()
+    
+    title(main = input$plot_title, cex.main = 1.5)
+  }
+  
+  ## Function to remove monomorphic markers from data
+  mono_rm <- function(x){
+    
+    m.morphic <- c()# Empty vector to store column index of monomorphic snps
+    
+    # For loop to subset each snp column
+    for(i in 1:ncol(x)){
+      column <- x[,i]
+      
+      if(length(unique(column)) == 1 ){
+        m.morphic <- c(m.morphic, i)
+      }
+    }
+    p.morphic <- x[, -c(m.morphic)]# Discard monomorphic snps from input data
+    
+    return(p.morphic)
+  }
+  
+  ## Function to convert a file of snp hapmap data to dichotomous scores.
+  snp_bin <-  function(x){
+    
+    # Data frame to hold re-coded snp loci into binary data
+    dicho <- data.frame(matrix(NA, ncol = (ncol(x)*2)+1, nrow = nrow(x)))
+    
+    VV <- c() # vector to hold snp alleles for all polymorphic snp loci
+    
+    for(i in 1:ncol(x)){
+      
+      y <- x[,i] # subset each snp column
+      
+      alleles <- sort(unique(unlist(strsplit(y, ""))))# Get unique snp alleles
+      
+      VV <- c(VV, alleles) # fill VV vector with alleles
+      
+      # Re-code snp alleles for each snp locus using binary coding
+      homo0 <- paste0(alleles[1], alleles[1]) # Define homo genotype 1
+      homo1 <- paste0(alleles[2], alleles[2]) # Define homo genotype 2
+      
+      y1 <- ifelse(y == homo1, 0, 1) # First binary coded column
+      dicho[,2*i] <- y1 # Fill dicho data frame with y1
+      
+      y2 <- ifelse(y == homo0, 0, 1) # Second binary coded column
+      dicho[,(2*i)+1] <- y2 # Fill dicho data frame with y2
+      
+    }
+    
+    dicho <- dicho[,-c(1)] # Remove dummy column 1
+    
+    rownames(dicho) <- rownames(x)# Rename rows of results matrix
+    colnames(dicho) <- paste0(rep(colnames(x), each = 2), VV)
+    
+    return(dicho)
+  }
+}
+
+# Run the application 
+shinyApp(ui = ui, server = server)
