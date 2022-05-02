@@ -10,7 +10,7 @@ library(seqinr)
 library(shinydashboard)
 library(shinydashboardPlus)
 
-ui <- dashboardPage(skin = "red",
+ui <- dashboardPage(skin = "red", title = "Clusnalyst",
   
   # CONTENTS OF THE HEADER ARE DEFINED HERE
   dashboardHeader(title = "CLUSNALYST"),
